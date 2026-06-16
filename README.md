@@ -343,7 +343,7 @@ For issues, questions, or suggestions:
 
 <div align="center">
 
-**Made with ❤️ by [Your Name]**
+**Made with ❤️ by Shivashiga A.M**
 
 ⭐ If you found this helpful, please consider giving it a star!
 
