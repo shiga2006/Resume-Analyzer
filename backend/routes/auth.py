@@ -1,165 +1,68 @@
-from flask import Blueprint, request, jsonify
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, EmailStr
 from config import users_collection
-import bcrypt
+import uuid
+import datetime
+
+auth_router = APIRouter(prefix="", tags=["Authentication"])
 
 
-auth_bp = Blueprint(
-    "auth",
-    __name__
-)
+class UserSignup(BaseModel):
+    username: str
+    email: str
+    password: str
 
 
-@auth_bp.route(
-    "/signup",
-    methods=["POST"]
-)
-def signup():
-
-    try:
-
-        data = request.get_json()
-
-        username = data.get("username")
-        email = data.get("email")
-        password = data.get("password")
-
-        if not username:
-            return jsonify({
-                "success": False,
-                "message": "Username required"
-            }), 400
-
-        if not email:
-            return jsonify({
-                "success": False,
-                "message": "Email required"
-            }), 400
-
-        if not password:
-            return jsonify({
-                "success": False,
-                "message": "Password required"
-            }), 400
-
-        existing_user = users_collection.find_one(
-            {"email": email}
-        )
-
-        if existing_user:
-
-            return jsonify({
-                "success": False,
-                "message": "Email already registered"
-            }), 409
-
-        hashed_password = bcrypt.hashpw(
-            password.encode("utf-8"),
-            bcrypt.gensalt()
-        )
-
-        users_collection.insert_one(
-            {
-                "username": username,
-                "email": email,
-                "password": hashed_password
-            }
-        )
-
-        return jsonify({
-            "success": True,
-            "message": "User registered successfully"
-        }), 201
-
-    except Exception as e:
-
-        return jsonify({
-            "success": False,
-            "message": str(e)
-        }), 500
+class UserLogin(BaseModel):
+    email: str
+    password: str
 
 
-@auth_bp.route(
-    "/login",
-    methods=["POST"]
-)
-def login():
+@auth_router.post("/signup")
+def signup(user: UserSignup):
+    if not user.username or not user.email or not user.password:
+        raise HTTPException(status_code=400, detail="All fields are required")
 
-    try:
+    existing_user = users_collection.find_one({"email": user.email.lower()})
+    if existing_user:
+        return {"success": False, "message": "Email already registered"}
 
-        data = request.get_json()
+    user_doc = {
+        "_id": str(uuid.uuid4()),
+        "username": user.username,
+        "email": user.email.lower(),
+        "password": user.password,  # In production, use hashed passwords e.g. passlib
+        "created_at": datetime.datetime.utcnow().isoformat()
+    }
 
-        email = data.get("email")
-        password = data.get("password")
-
-        if not email:
-            return jsonify({
-                "success": False,
-                "message": "Email required"
-            }), 400
-
-        if not password:
-            return jsonify({
-                "success": False,
-                "message": "Password required"
-            }), 400
-
-        user = users_collection.find_one(
-            {"email": email}
-        )
-
-        if not user:
-
-            return jsonify({
-                "success": False,
-                "message": "User not found"
-            }), 404
-
-        password_match = bcrypt.checkpw(
-            password.encode("utf-8"),
-            user["password"]
-        )
-
-        if not password_match:
-
-            return jsonify({
-                "success": False,
-                "message": "Invalid password"
-            }), 401
-
-        return jsonify({
-            "success": True,
-            "message": "Login successful",
-            "user": {
-                "id": str(user["_id"]),
-                "username": user["username"],
-                "email": user["email"]
-            }
-        }), 200
-
-    except Exception as e:
-
-        return jsonify({
-            "success": False,
-            "message": str(e)
-        }), 500
+    users_collection.insert_one(user_doc)
+    return {
+        "success": True,
+        "message": "User registered successfully",
+        "user": {
+            "id": user_doc["_id"],
+            "username": user_doc["username"],
+            "email": user_doc["email"]
+        }
+    }
 
 
-@auth_bp.route(
-    "/users",
-    methods=["GET"]
-)
-def get_users():
+@auth_router.post("/login")
+def login(credentials: UserLogin):
+    user = users_collection.find_one({
+        "email": credentials.email.lower(),
+        "password": credentials.password
+    })
 
-    users = []
+    if not user:
+        return {"success": False, "message": "Invalid email or password"}
 
-    for user in users_collection.find():
-
-        users.append(
-            {
-                "id": str(user["_id"]),
-                "username": user["username"],
-                "email": user["email"]
-            }
-        )
-
-    return jsonify(users)
+    return {
+        "success": True,
+        "message": "Login successful",
+        "user": {
+            "id": str(user["_id"]),
+            "username": user["username"],
+            "email": user["email"]
+        }
+    }
